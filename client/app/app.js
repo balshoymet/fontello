@@ -5,9 +5,11 @@ var _  = require('lodash');
 var ko = require('knockout');
 
 
+
 var embedded_fonts = require('../../lib/embedded_fonts/client_config');
 var codesTracker   = require('./_codes_tracker');
 var namesTracker   = require('./_names_tracker');
+var svgFontTemplate = require('./_svg_font_template');
 
 
 var DEFAULT_GLYPH_SIZE = 16;
@@ -58,7 +60,7 @@ function GlyphModel(font, data) {
   this.uid          = data.uid;
   this.originalName = data.css;
   this.originalCode = data.code;
-
+  
   //
   // Helper properties
   //
@@ -80,6 +82,7 @@ function GlyphModel(font, data) {
   this.selected = ko.observable(false);
   this.name     = ko.observable(this.originalName);
   this.code     = ko.observable(this.originalCode);
+  this.svg  = {path: data.path, width: data.width};
 
   this.selected.subscribe(function () {
     N.wire.emit('session_save');
@@ -165,24 +168,22 @@ function GlyphModel(font, data) {
 
 
 ////////////////////////////////////////////////////////////////////////////////
-
-
 function FontModel(data) {
-
   //
   // Essential properties
   //
+  this.fullname = (data.font || {}).fullname;
+  this.fontname = (data.font || {}).fontname; // also used as font id
 
-  this.fullname = data.font.fullname;
-  this.fontname = data.font.fontname; // also used as font id
+  this.author   = (data.meta || {}).author;
+  this.license  = (data.meta || {}).license;
+  this.homepage = (data.meta || {}).homepage;
+  this.email    = (data.meta || {}).email;
+  this.twitter  = (data.meta || {}).twitter;
+  this.github   = (data.meta || {}).github;
+  this.dribbble = (data.meta || {}).dribbble;
 
-  this.author   = data.meta.author;
-  this.license  = data.meta.license;
-  this.homepage = data.meta.homepage;
-  this.email    = data.meta.email;
-  this.twitter  = data.meta.twitter;
-  this.github   = data.meta.github;
-  this.dribbble = data.meta.dribbble;
+  this.isCustom = data.isCustom;
 
   //
   // View state properties
@@ -217,17 +218,32 @@ function FontModel(data) {
     N.wire.emit('session_save');
   });
 
+  this.makeSvgFont = function() {
+    var conf = {};
+    conf.font = {};
+    conf.font.copyright = this.license;
+    conf.font.fontname = this.fontname;
+    conf.font.familyname = this.fontname;
+    conf.font.ascent = 850;
+    conf.font.descent = -150;
+    conf.glyphs = _.map(this.glyphs(), function(data){
+      return {css: data.originalName, code: data.code(), d: data.svg.path, width:data.svg.width};
+    });
+
+
+    return svgFontTemplate.generate(conf);
+  }
 
   // Array of font glyphs
   //
-  this.glyphs = _.map(data.glyphs, function (data) {
+  this.glyphs = ko.observableArray(_.map(data.glyphs, function (data) {
     return new GlyphModel(this, data);
-  }, this);
+  }));
 
   // Array of selected glyphs of a font
   //
   this.selectedGlyphs = ko.computed(function () {
-    return _.filter(this.glyphs, function (glyph) { return glyph.selected(); });
+    return _.filter(this.glyphs(), function (glyph) { return glyph.selected(); });
   }, this).extend({ throttle: 100 });
 
   // selected glyphs count
@@ -239,17 +255,22 @@ function FontModel(data) {
   // Visible glyphs count
   //
   this.visibleCount = ko.computed(function () {
-    return _.reduce(this.glyphs, function (cnt, glyph) { return cnt + (glyph.visible() ? 1 : 0); }, 0);
+    return _.reduce(this.glyphs(), function (cnt, glyph) { return cnt + (glyph.visible() ? 1 : 0); }, 0);
   }, this).extend({ throttle: 100 });
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 
 function FontsList() {
+  this.fonts = [];
+
+  // Set the Custom font
+  this.fonts.push(new FontModel({font: {fontname: 'customFont'}, isCustom : true}));
+
   // Ordered list, to display on the page
-  this.fonts = _.map(embedded_fonts, function (data) {
+  this.fonts.push.apply(this.fonts, _.map(embedded_fonts, function (data) {
     return new FontModel(data);
-  });
+  }));
 
   // Named list, for state import/export
   this.fontsByName = {};
@@ -279,7 +300,6 @@ function FontsList() {
 
 ////////////////////////////////////////////////////////////////////////////////
 
-
 // Create global `model` and properties
 N.app = {};
 
@@ -296,6 +316,10 @@ N.app.encoding      = ko.observable('pua');
 N.app.apiMode     = ko.observable(false);
 N.app.apiUrl      = ko.observable('');
 N.app.apiSessionId  = null;
+
+N.models = {};
+N.models.FontModel = FontModel;
+N.models.GlyphModel = GlyphModel;
 
 
 N.app.getConfig   = function () {
@@ -318,7 +342,6 @@ N.app.serverSave  = function(callback) {
 
   N.io.rpc('fontello.api.update', { sid: N.app.apiSessionId, config: N.app.getConfig() }, callback);
 };
-
 
 // Set new code for each selected glyph using currect encoding.
 //

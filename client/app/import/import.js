@@ -3,7 +3,14 @@
 
 var _     = require('lodash');
 var async = require('async');
+var fontface = require('../_fontface.js');
 
+function uidGen() {
+  return 'xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+    var r = Math.random()*16|0, v = c == 'x' ? r : (r&0x3|0x8);
+    return v.toString(16);
+  });
+}
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -81,6 +88,71 @@ function import_zip(data, file) {
   }
 }
 
+function isSvgFont(data) {
+  return (data.indexOf('<font') + 1);
+}
+
+function loadXMLString(xmlstring) {
+  var xmlDoc;
+  if (window.DOMParser) {
+    var parser=new DOMParser();
+    xmlDoc=parser.parseFromString(xmlstring,"text/xml");
+  }
+  else // Internet Explorer
+  {
+    xmlDoc=new ActiveXObject("Microsoft.XMLDOM");
+    xmlDoc.async="false";
+    xmlDoc.loadXML(xmlstring); 
+  }
+  return xmlDoc;
+}
+
+function coordinateTransform(path) {
+  return path;
+}
+
+//
+// Import svg files. Try to determine content & call appropriate parsers
+//
+// data - text content
+// file - original file info
+//
+function import_svg(data, file) {
+  if (!isSvgFont(data)) {
+    console.error(file.name + " does not contain fonts");
+    return;
+  }
+  var customFont = _.find(N.app.fontsList.fonts, {isCustom: true});
+
+  if (!customFont) {
+    console.error("The custom font does not exist");
+    return;
+  }
+  var xmlDoc=loadXMLString(data);
+  var svgGlyps = xmlDoc.getElementsByTagName('glyph');
+  console.log(svgGlyps);
+
+  _.each(svgGlyps, function (svgGlyph) { 
+    var code = svgGlyph.attributes['unicode'].value.charCodeAt(0);
+    var d = svgGlyph.attributes['d'].value;
+
+    var glyphsData = {
+      "css": (svgGlyph.attributes['glyph-name'].value || 'glyph'), // default name
+      "code": code,
+      "uid": uidGen(),
+      "charRef": code,
+      "path": coordinateTransform(d),
+      "width": svgGlyph.attributes['horiz-adv-x'].value
+    }
+    var glyph = new N.models.GlyphModel(customFont, glyphsData);
+    customFont.glyphs.push(glyph);
+  })
+  
+  console.log(customFont);
+
+  fontface.update(customFont.makeSvgFont(), customFont.fontname);
+}
+
 // Handles change event of file input
 //
 function handleFileSelect(event) {
@@ -118,6 +190,7 @@ function handleFileSelect(event) {
         // and importer
         //
 
+        
         // Chrome omits type on JSON files, so check it by extention
         if (file.name.match(/[.]json$/)) {
           reader.onload = function (e) {
@@ -126,15 +199,20 @@ function handleFileSelect(event) {
           };
           reader.readAsText(file);
           return;
-        }
-
-        if (file.type === 'application/zip') {
+        } else if (file.type === 'application/zip') {
           reader.onload = function (e) {
             import_zip(e.target.result, file);
             next();
           };
           // Don't use readAsBinaryString() for IE 10 compatibility
           reader.readAsArrayBuffer(file);
+          return;
+        }  else if (file.type === 'image/svg+xml') {
+          reader.onload = function (e) {
+            import_svg(e.target.result, file);
+            next();
+          };
+          reader.readAsText(file);
           return;
         }
 
