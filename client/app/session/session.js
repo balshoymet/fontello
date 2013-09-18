@@ -194,6 +194,10 @@ N.wire.on('session_load', function () {
 
       var targetGlyph = lookup[glyph.uid];
 
+      // FIXME: temporary fix, when we got uid that does not exists
+      // in our collection. Investigate how that can happen.
+      if (!targetGlyph) { return; }
+
       targetGlyph.selected(!!glyph.selected);
       targetGlyph.code(glyph.code || targetGlyph.originalCode);
       targetGlyph.name(glyph.css || targetGlyph.originalName);
