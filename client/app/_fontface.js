@@ -5,14 +5,14 @@ exports.update = function(svg, fontId) {
   // + create style description string
   // + check for the style in the DOM and remove if contains
   // + insert the new style into DOM
-  var cfg = {dataUri : 'data:image/svg+xml;utf8,' + svg, fontId : fontId};
+  var cfg = {dataUri : 'data:image/svg+xml,' + encodeURIComponent(svg), fontId : fontId};
 
   var list =
   '<style id="ff_${fontId}" type="text/css">\n' +
   '  .font-${fontId} { font-family: "fml_customFont"; }\n' +
   '  @font-face {\n' +
   '    font-family: "fml_customFont";\n' +
-  '    src: url("${dataUri}"#_${fontId}) format("svg");\n' +
+  '    src: url("${dataUri}") format("svg");\n' +
   '    font-weight: normal;\n' +
   '    font-style: normal;\n' +
   '  }\n' +
